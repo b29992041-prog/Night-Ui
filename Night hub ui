@@ -12,9 +12,13 @@ local InsertService = game:GetService("InsertService")
 local ContentProvider = game:GetService("ContentProvider")
 local MarketplaceService = game:GetService("MarketplaceService")
 
-local pg = Players.LocalPlayer:WaitForChild("PlayerGui")
-local old = pg:FindFirstChild("gui")
-if old then old:Destroy() end
+local pg = Players.LocalPlayer and (Players.LocalPlayer:FindFirstChild("PlayerGui") or Players.LocalPlayer:WaitForChild("PlayerGui", 10))
+if not pg then return end
+
+pcall(function()
+	local old = pg:FindFirstChild("gui")
+	if old then old:Destroy() end
+end)
 
 -- ================= CẤU HÌNH =================
 local RED      = Color3.fromRGB(224, 38, 54)
@@ -57,9 +61,19 @@ local ABOUT = {
 local Hooks = {}
 local Notify, notifyAction, notifyEnabled = nil, nil, true
 local function fire(name, ...)
+	local args = {...}
 	local f = Hooks[name]
-	if f then task.spawn(f, ...) else print("[NightZSeries]", name, ...) end
-	if notifyAction then notifyAction(name, ...) end
+	if f then
+		task.spawn(function()
+			local ok, err = pcall(f, table.unpack(args))
+			if not ok then warn("[NightZSeries Hook Error]", name, err) end
+		end)
+	else
+		pcall(print, "[NightZSeries]", name, table.unpack(args))
+	end
+	if notifyAction then
+		pcall(notifyAction, name, table.unpack(args))
+	end
 end
 
 local TABS = {
@@ -103,8 +117,12 @@ local CONTENT = {
 -- ================= UI HELPER =================
 local function new(class, props, kids)
 	local o = Instance.new(class)
-	for k, v in pairs(props or {}) do o[k] = v end
-	for _, c in ipairs(kids or {}) do c.Parent = o end
+	for k, v in pairs(props or {}) do
+		pcall(function() o[k] = v end)
+	end
+	for _, c in ipairs(kids or {}) do
+		pcall(function() c.Parent = o end)
+	end
 	return o
 end
 local function corner(r) return new("UICorner", {CornerRadius = UDim.new(0, r)}) end
@@ -140,16 +158,23 @@ local function ring(parent, x, y, w, h, col)
 		BackgroundTransparency = 1, Parent = parent}, {round(), stroke(col or RED, 1.5)})
 end
 local function tween(obj, dur, props, style, dir, delay)
-	local tw = TweenService:Create(obj, TweenInfo.new(dur, style or Enum.EasingStyle.Sine, dir or Enum.EasingDirection.InOut, 0, false, delay or 0), props)
-	tw:Play()
-	return tw
+	local ok, tw = pcall(function()
+		local t = TweenService:Create(obj, TweenInfo.new(dur, style or Enum.EasingStyle.Sine, dir or Enum.EasingDirection.InOut, 0, false, delay or 0), props)
+		t:Play()
+		return t
+	end)
+	return ok and tw or nil
 end
 local function numTween(from, to, dur, style, dir, fn)
 	local nv = Instance.new("NumberValue")
 	nv.Value = from
-	local c = nv.Changed:Connect(fn)
+	local c = nv.Changed:Connect(function(val) pcall(fn, val) end)
 	local tw = tween(nv, dur, {Value = to}, style, dir)
-	tw.Completed:Once(function() c:Disconnect() nv:Destroy() end)
+	if tw then
+		tw.Completed:Once(function() c:Disconnect(); nv:Destroy() end)
+	else
+		c:Disconnect(); nv:Destroy()
+	end
 	return tw
 end
 local function hoverCard(card, st, normalPos, lift)
@@ -167,7 +192,13 @@ end
 local fadeData = {}
 local function prepFade(root)
 	local list = {}
-	local function add(o, prop) table.insert(list, {o, prop, o[prop]}); o[prop] = 1 end
+	local function add(o, prop)
+		local ok, val = pcall(function() return o[prop] end)
+		if ok then
+			table.insert(list, {o, prop, val})
+			pcall(function() o[prop] = 1 end)
+		end
+	end
 	for _, d in ipairs(root:GetDescendants()) do
 		if d:IsA("TextLabel") or d:IsA("TextButton") then
 			add(d, "TextTransparency"); add(d, "BackgroundTransparency")
@@ -182,7 +213,7 @@ local function prepFade(root)
 	fadeData[root] = list
 end
 local function fadeIn(root, dur, delay)
-	for _, e in ipairs(fadeData[root]) do
+	for _, e in ipairs(fadeData[root] or {}) do
 		tween(e[1], dur, {[e[2]] = e[3]}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out, delay)
 	end
 end
@@ -357,7 +388,7 @@ local function navBtn(label, p, sc)
 		ZIndex = 2, BackgroundTransparency = 1, Text = label, TextColor3 = label == "Home" and WHITE or GRAY, TextSize = 9})
 	b.MouseEnter:Connect(function() if curNav ~= label then tween(b, 0.15, {TextColor3 = RED}) end end)
 	b.MouseLeave:Connect(function() if curNav ~= label then tween(b, 0.15, {TextColor3 = GRAY}) end end)
-	b.MouseButton1Click:Connect(function() go(p, sc) end)
+	b.MouseButton1Click:Connect(function() if go then go(p, sc) end end)
 	navBtns[label] = b
 end
 local function layoutNav()
@@ -383,6 +414,7 @@ local function applyScene(name)
 	if name == curScene then return end
 	curScene = name
 	local sc = SCENES[name]
+	if not sc then return end
 	sceneToken += 1
 	local token = sceneToken
 	local f = {yaw = cs.yaw, pitch = cs.pitch, dist = cs.dist, ty = cs.ty, tx = cs.tx}
@@ -401,22 +433,22 @@ end
 
 local onShow, SLIDE_T = {}, 0.6
 local function showPage(p)
-	if p == cur then return end
+	if not p or p == cur then return end
 	local dir = (pageOrder[p] > (cur and pageOrder[cur] or 0)) and 1 or -1
 	local oldP = cur
 	cur = p
 	if oldP then
 		tween(oldP, SLIDE_T, {Position = UDim2.fromOffset(W / 2 - dir * W, H / 2)}, Enum.EasingStyle.Quart, Enum.EasingDirection.InOut)
-		task.delay(SLIDE_T + 0.05, function() if cur ~= oldP then oldP.Visible = false end end)
+		task.delay(SLIDE_T + 0.05, function() if cur ~= oldP then pcall(function() oldP.Visible = false end) end end)
 	end
 	p.Position = UDim2.fromOffset(W / 2 + dir * W, H / 2)
-	scales[p].Scale = 1
+	if scales[p] then scales[p].Scale = 1 end
 	p.Visible = true
 	tween(p, SLIDE_T, {Position = UDim2.fromOffset(W / 2, H / 2)}, Enum.EasingStyle.Quart, Enum.EasingDirection.InOut)
-	if onShow[p] then onShow[p]() end
+	if onShow[p] then pcall(onShow[p]) end
 end
 go = function(p, scene)
-	if not ready or p == cur then return end
+	if not ready or not p or p == cur then return end
 	showPage(p); applyScene(scene)
 end
 
@@ -484,7 +516,9 @@ local function registerTexts(root)
 end
 local function applyLang()
 	for obj, orig in pairs(origText) do
-		if obj.Parent then obj.Text = dyn[obj] and dyn[obj]() or translateText(orig) end
+		pcall(function()
+			if obj.Parent then obj.Text = dyn[obj] and dyn[obj]() or translateText(orig) end
+		end)
 	end
 end
 local function nt(en, vi) return LANG == "vi" and vi or en end
@@ -498,8 +532,8 @@ end
 local function setLang(l)
 	if l == LANG then return end
 	LANG = l; applyLang(); layoutNav(); refreshLangBtns()
-	if Notify then Notify(nt("Language", "Ngôn ngữ"), nt("Switched to English", "Đã chuyển sang Tiếng Việt"), "success", 2.5) end
-	pcall(function() writefile("NightZSeries_lang.txt", l) end)
+	if Notify then pcall(Notify, nt("Language", "Ngôn ngữ"), nt("Switched to English", "Đã chuyển sang Tiếng Việt"), "success", 2.5) end
+	pcall(function() if writefile then writefile("NightZSeries_lang.txt", l) end end)
 end
 
 -- ================= ROW / GROUP / SCROLL =================
@@ -561,7 +595,7 @@ end
 
 -- ================= TRANG CON =================
 local subPages = {}
-local function openSub(key) go(subPages[key], "page") end
+local function openSub(key) if go then go(subPages[key], "page") end end
 
 for _, tab in ipairs(TABS) do
 	local p = newPage(2.5)
@@ -571,7 +605,7 @@ for _, tab in ipairs(TABS) do
 	line(back, 7, 12, 17, 12, 1.5, RED); line(back, 7, 12, 11, 8, 1.5, RED); line(back, 7, 12, 11, 16, 1.5, RED)
 	back.MouseEnter:Connect(function() tween(back, 0.15, {BackgroundColor3 = RED_DARK}) end)
 	back.MouseLeave:Connect(function() tween(back, 0.15, {BackgroundColor3 = Color3.fromRGB(36, 20, 24)}) end)
-	back.MouseButton1Click:Connect(function() go(gridPage, "page") end)
+	back.MouseButton1Click:Connect(function() if go then go(gridPage, "page") end end)
 	text(p, {Size = UDim2.fromOffset(150, 8), Position = UDim2.fromOffset(56, 51), Text = "PAGE / " .. tab.title, TextSize = 6, TextColor3 = GRAY})
 	text(p, {Size = UDim2.fromOffset(200, 20), Position = UDim2.fromOffset(55, 59), Text = tab.title, TextSize = 15, Font = Enum.Font.GothamBlack})
 
@@ -590,7 +624,7 @@ for _, tab in ipairs(TABS) do
 			if prev then
 				local ph = scrolls[prev]
 				tween(ph, 0.4, {Position = UDim2.fromOffset(10 - dir * (W - 20), 114)}, Enum.EasingStyle.Quart, Enum.EasingDirection.InOut)
-				task.delay(0.45, function() if activeChip ~= prev then ph.Visible = false end end)
+				task.delay(0.45, function() if activeChip ~= prev then pcall(function() ph.Visible = false end) end end)
 			end
 			local h = scrolls[name]
 			if instant then h.Visible = true; h.Position = UDim2.fromOffset(10, 114)
@@ -699,7 +733,7 @@ local function revealUI()
 	titleLbl.MaxVisibleGraphemes = 0
 	task.delay(0.5, function()
 		numTween(0, 18, 0.8, Enum.EasingStyle.Sine, Enum.EasingDirection.Out, function(n) titleLbl.MaxVisibleGraphemes = math.floor(n + 0.5) end)
-		task.delay(0.95, function() titleLbl.MaxVisibleGraphemes = -1 end)
+		task.delay(0.95, function() pcall(function() titleLbl.MaxVisibleGraphemes = -1 end) end)
 	end)
 	for i, w in ipairs(wrappers) do
 		local d = 0.75 + i * 0.1
@@ -759,23 +793,28 @@ end
 -- ================= HOOKS & DRAG =================
 Hooks["Reset UI Position"] = function() win.Position = UDim2.fromScale(0.5, 0.5) end
 Hooks["Copy Discord Link"] = function()
-	local ok = pcall(function() setclipboard(ABOUT.discord) end)
-	Notify(nt("Discord link", "Link Discord"),
-		ok and nt("Copied to clipboard", "Đã sao chép") or nt("Clipboard not supported", "Executor không hỗ trợ clipboard"),
-		ok and "success" or "warning", 3, true)
+	local ok = pcall(function() if setclipboard then setclipboard(ABOUT.discord) else error("no clipboard") end end)
+	if Notify then
+		pcall(Notify, nt("Discord link", "Link Discord"),
+			ok and nt("Copied to clipboard", "Đã sao chép") or nt("Clipboard not supported", "Executor không hỗ trợ clipboard"),
+			ok and "success" or "warning", 3, true)
+	end
 end
 Hooks["Notifications"] = function(on)
 	notifyEnabled = on
-	Notify(nt("Notifications", "Thông báo"), on and nt("Enabled", "Đã bật") or nt("Disabled", "Đã tắt"), on and "success" or "info", 2.5, true)
+	if Notify then
+		pcall(Notify, nt("Notifications", "Thông báo"), on and nt("Enabled", "Đã bật") or nt("Disabled", "Đã tắt"), on and "success" or "info", 2.5, true)
+	end
 end
 Hooks["Test Notification"] = function()
+	if not Notify then return end
 	for _, item in ipairs({
 		{nt("Info", "Thông tin"), nt("This is an info notification.", "Đây là thông báo thông tin."), "info"},
 		{nt("Success", "Thành công"), nt("Everything works perfectly.", "Mọi thứ hoạt động tốt."), "success"},
 		{nt("Warning", "Cảnh báo"), nt("Be careful with this action.", "Hãy cẩn thận với hành động này."), "warning"},
 		{nt("Error", "Lỗi"), nt("Something went wrong (just a test).", "Có lỗi xảy ra (chỉ là thử)."), "error"},
 	}) do
-		Notify(item[1], item[2], item[3], 4, true)
+		pcall(Notify, item[1], item[2], item[3], 4, true)
 		task.wait(0.35)
 	end
 end
@@ -788,7 +827,7 @@ do
 		end
 	end)
 	UIS.InputChanged:Connect(function(i)
-		if drag and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType.Touch) then
+		if drag and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
 			local d = i.Position - sm
 			win.Position = UDim2.new(sp.X.Scale, sp.X.Offset + d.X, sp.Y.Scale, sp.Y.Offset + d.Y)
 		end
@@ -825,43 +864,49 @@ local loaded = false
 local badgeDecal = new("Decal", {Name = "KKK", Texture = "rbxassetid://93076575693709", Face = Enum.NormalId.Top, Transparency = 1})
 
 task.spawn(function()
-	local results, done, total = {}, 0, #SPECS + 1
-	for i, sp in ipairs(SPECS) do
-		task.spawn(function()
-			for _ = 1, 3 do
-				local ok, res = pcall(function()
-					return InsertService:CreateMeshPartAsync("rbxassetid://" .. sp[2], Enum.CollisionFidelity.Default, Enum.RenderFidelity.Performance)
-				end)
-				if ok then results[i] = res break end
-				task.wait(0.3)
-			end
-			done += 1
-		end)
-	end
-	task.spawn(function() pcall(function() ContentProvider:PreloadAsync({badgeDecal}) end); done += 1 end)
-	local t0 = os.clock()
-	while done < total and os.clock() - t0 < 25 do task.wait() end
-
-	for i, sp in ipairs(SPECS) do
-		local r = results[i]
-		if r then
-			r.Name, r.Anchored, r.CastShadow, r.Size, r.CFrame = sp[1], true, false, sp[3], sp[4]
-			r.Material = sp[5] or Enum.Material.SmoothPlastic
-			r.Color = sp[7] or Color3.new(1, 1, 1)
-			orig[r] = sp[6] or 0; r.Transparency = 1; r.Parent = car
-			table.insert(parts, r)
-			if sp[1] == "Light1" or sp[1] == "Glow1" then table.insert(lightsOnly, r) end
+	pcall(function()
+		local results, done, total = {}, 0, #SPECS + 1
+		for i, sp in ipairs(SPECS) do
+			task.spawn(function()
+				for _ = 1, 3 do
+					local ok, res = pcall(function()
+						return InsertService:CreateMeshPartAsync("rbxassetid://" .. sp[2], Enum.CollisionFidelity.Default, Enum.RenderFidelity.Performance)
+					end)
+					if ok and res then results[i] = res break end
+					task.wait(0.3)
+				end
+				done += 1
+			end)
 		end
-	end
-	local badge = new("Part", {
-		Name = "Badge", Anchored = true, CastShadow = false, Transparency = 1, Size = Vector3.new(0.125,0.002,0.125),
-		CFrame = CFrame.new(-2.2019,0.6187,0,-3.823084e-08,-0.4848096,0.8746197,-2.11917e-08,0.8746197,0.4848096,-1,0,-4.371138e-08),
-		Parent = car,
-	})
-	badgeDecal.Parent = badge
-	local box, size = car:GetBoundingBox()
-	car:PivotTo(CFrame.new(-box.Position) * car:GetPivot())
-	baseDist = size.Magnitude / (2 * math.tan(math.rad(cam.FieldOfView / 2))) * 0.8
+		task.spawn(function() pcall(function() ContentProvider:PreloadAsync({badgeDecal}) end); done += 1 end)
+		local t0 = os.clock()
+		while done < total and os.clock() - t0 < 25 do task.wait() end
+
+		for i, sp in ipairs(SPECS) do
+			local r = results[i]
+			if r then
+				pcall(function()
+					r.Name, r.Anchored, r.CastShadow, r.Size, r.CFrame = sp[1], true, false, sp[3], sp[4]
+					r.Material = sp[5] or Enum.Material.SmoothPlastic
+					r.Color = sp[7] or Color3.new(1, 1, 1)
+					orig[r] = sp[6] or 0; r.Transparency = 1; r.Parent = car
+					table.insert(parts, r)
+					if sp[1] == "Light1" or sp[1] == "Glow1" then table.insert(lightsOnly, r) end
+				end)
+			end
+		end
+		local badge = new("Part", {
+			Name = "Badge", Anchored = true, CastShadow = false, Transparency = 1, Size = Vector3.new(0.125,0.002,0.125),
+			CFrame = CFrame.new(-2.2019,0.6187,0,-3.823084e-08,-0.4848096,0.8746197,-2.11917e-08,0.8746197,0.4848096,-1,0,-4.371138e-08),
+			Parent = car,
+		})
+		badgeDecal.Parent = badge
+		local okBox, box, size = pcall(function() return car:GetBoundingBox() end)
+		if okBox and box and size then
+			pcall(function() car:PivotTo(CFrame.new(-box.Position) * car:GetPivot()) end)
+			baseDist = size.Magnitude / (2 * math.tan(math.rad(cam.FieldOfView / 2))) * 0.8
+		end
+	end)
 	loaded = true
 end)
 
@@ -872,39 +917,44 @@ local function startShine()
 	task.spawn(function()
 		while gui.Parent do
 			task.wait(6)
-			if win.Visible and curScene ~= "page" then
-				shine.Position = UDim2.fromOffset(-80, H / 2)
-				tween(shine, 1.8, {Position = UDim2.fromOffset(W + 80, H / 2)}, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut)
-				task.wait(1.9)
-			end
+			pcall(function()
+				if win.Visible and curScene ~= "page" then
+					shine.Position = UDim2.fromOffset(-80, H / 2)
+					tween(shine, 1.8, {Position = UDim2.fromOffset(W + 80, H / 2)}, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut)
+					task.wait(1.9)
+				end
+			end)
 		end
 	end)
 end
 
 local idle, idleT0, t, par = false, 0, 0, {x = 0, y = 0}
 local conStep = RunService.RenderStepped:Connect(function(dt)
-	if not win.Visible then return end
-	t += dt
-	local yaw, pitch, dist, bob = cs.yaw, cs.pitch, cs.dist, 0
-	if idle then
-		local s, amp = t - idleT0, math.clamp((t - idleT0) / 2, 0, 1)
-		bob = math.sin(s * 0.8) * 0.02 * amp
-		bgBreath = math.sin(s * 0.9) * 0.04 * amp; applyBg()
-		local mp, c, k = UIS:GetMouseLocation(), win.AbsolutePosition + win.AbsoluteSize / 2, math.min(1, dt * 3)
-		par.x += (math.clamp((mp.X - c.X) / 700, -0.6, 0.6) - par.x) * k
-		par.y += (math.clamp((mp.Y - c.Y) / 500, -0.6, 0.6) - par.y) * k
-		yaw += (math.sin(s * 0.55) * 0.07 - par.x * 0.14) * amp
-		pitch += (math.sin(s * 0.4) * 0.015 + par.y * 0.05) * amp
-		dist *= 1 + math.sin(s * 0.45) * 0.012 * amp
-		v.LightDirection = Vector3.new(-0.5 + math.sin(s * 0.5) * 0.35, -1, 0.6 + math.cos(s * 0.4) * 0.25)
-		bigText.Position = UDim2.fromOffset(W / 2 + math.sin(s * 0.35) * 8 * amp, 150)
-		for _, p in ipairs(lightsOnly) do
-			if p.Name == "Glow1" then p.Transparency = 0.82 + math.sin(s * 1.6) * 0.05 * amp end
+	pcall(function()
+		if not win.Visible then return end
+		t += dt
+		local yaw, pitch, dist, bob = cs.yaw, cs.pitch, cs.dist, 0
+		if idle then
+			local s, amp = t - idleT0, math.clamp((t - idleT0) / 2, 0, 1)
+			bob = math.sin(s * 0.8) * 0.02 * amp
+			bgBreath = math.sin(s * 0.9) * 0.04 * amp; applyBg()
+			local mp = UIS:GetMouseLocation()
+			local c, k = win.AbsolutePosition + win.AbsoluteSize / 2, math.min(1, dt * 3)
+			par.x += (math.clamp((mp.X - c.X) / 700, -0.6, 0.6) - par.x) * k
+			par.y += (math.clamp((mp.Y - c.Y) / 500, -0.6, 0.6) - par.y) * k
+			yaw += (math.sin(s * 0.55) * 0.07 - par.x * 0.14) * amp
+			pitch += (math.sin(s * 0.4) * 0.015 + par.y * 0.05) * amp
+			dist *= 1 + math.sin(s * 0.45) * 0.012 * amp
+			v.LightDirection = Vector3.new(-0.5 + math.sin(s * 0.5) * 0.35, -1, 0.6 + math.cos(s * 0.4) * 0.25)
+			bigText.Position = UDim2.fromOffset(W / 2 + math.sin(s * 0.35) * 8 * amp, 150)
+			for _, p in ipairs(lightsOnly) do
+				if p.Name == "Glow1" then p.Transparency = 0.82 + math.sin(s * 1.6) * 0.05 * amp end
+			end
 		end
-	end
-	local rot = CFrame.Angles(0, yaw, 0) * CFrame.Angles(-pitch, 0, 0)
-	local target = Vector3.new(0, cs.ty + bob, 0) + rot.RightVector * cs.tx
-	cam.CFrame = CFrame.lookAt(target + rot:VectorToWorldSpace(Vector3.new(0, 0, dist)), target)
+		local rot = CFrame.Angles(0, yaw, 0) * CFrame.Angles(-pitch, 0, 0)
+		local target = Vector3.new(0, cs.ty + bob, 0) + rot.RightVector * cs.tx
+		cam.CFrame = CFrame.lookAt(target + rot:VectorToWorldSpace(Vector3.new(0, 0, dist)), target)
+	end)
 end)
 
 -- ================= THÔNG BÁO =================
@@ -922,42 +972,44 @@ end
 
 Notify = function(title, msg, kind, duration, force)
 	if not (notifyEnabled or force) then return end
-	kind = NOTI_COL[kind] and kind or "info"
-	duration = duration or 3.5; notiCount += 1
-	local col = NOTI_COL[kind]
+	pcall(function()
+		kind = NOTI_COL[kind] and kind or "info"
+		duration = duration or 3.5; notiCount += 1
+		local col = NOTI_COL[kind]
 
-	local wrap = new("Frame", {Size = UDim2.fromOffset(280, 58), BackgroundTransparency = 1, LayoutOrder = notiCount, Parent = notiHolder})
-	local card = btn(wrap, {Size = UDim2.fromScale(1, 1), Position = UDim2.fromOffset(0, -90), BackgroundColor3 = Color3.fromRGB(18, 15, 18), Text = ""},
-		{corner(10), stroke(col, 1, 0.55)})
-	new("Frame", {Size = UDim2.fromOffset(3, 30), Position = UDim2.fromOffset(8, 14), BackgroundColor3 = col, BorderSizePixel = 0, Parent = card}, {round()})
-	local ic = new("Frame", {Size = UDim2.fromOffset(28, 28), Position = UDim2.fromOffset(18, 15), BackgroundColor3 = col,
-		BackgroundTransparency = 0.86, BorderSizePixel = 0, Parent = card}, {round(), stroke(col, 1.2, 0.45)})
-	if kind == "success" then line(ic, 8, 14, 12.5, 18.5, 2.2, col); line(ic, 12.5, 18.5, 20, 9.5, 2.2, col)
-	elseif kind == "error" then line(ic, 9.5, 9.5, 18.5, 18.5, 2.2, col); line(ic, 18.5, 9.5, 9.5, 18.5, 2.2, col)
-	else text(ic, {Size = UDim2.fromScale(1, 1), Text = kind == "warning" and "!" or "i", TextSize = 16, Font = Enum.Font.GothamBlack,
-		TextColor3 = col, TextXAlignment = Enum.TextXAlignment.Center}) end
-	fitLabel(text(card, {Size = UDim2.fromOffset(214, 13), Position = UDim2.fromOffset(54, 10), Text = title, TextSize = 10}), 10)
-	fitLabel(text(card, {Size = UDim2.fromOffset(214, 24), Position = UDim2.fromOffset(54, 25), Text = msg, TextSize = 8,
-		TextColor3 = GRAY, Font = Enum.Font.Gotham, TextWrapped = true, TextYAlignment = Enum.TextYAlignment.Top}), 8)
-	local bar = new("Frame", {Size = UDim2.fromOffset(260, 2), Position = UDim2.fromOffset(10, 54), BackgroundColor3 = col,
-		BackgroundTransparency = 0.25, BorderSizePixel = 0, Parent = card}, {round()})
+		local wrap = new("Frame", {Size = UDim2.fromOffset(280, 58), BackgroundTransparency = 1, LayoutOrder = notiCount, Parent = notiHolder})
+		local card = btn(wrap, {Size = UDim2.fromScale(1, 1), Position = UDim2.fromOffset(0, -90), BackgroundColor3 = Color3.fromRGB(18, 15, 18), Text = ""},
+			{corner(10), stroke(col, 1, 0.55)})
+		new("Frame", {Size = UDim2.fromOffset(3, 30), Position = UDim2.fromOffset(8, 14), BackgroundColor3 = col, BorderSizePixel = 0, Parent = card}, {round()})
+		local ic = new("Frame", {Size = UDim2.fromOffset(28, 28), Position = UDim2.fromOffset(18, 15), BackgroundColor3 = col,
+			BackgroundTransparency = 0.86, BorderSizePixel = 0, Parent = card}, {round(), stroke(col, 1.2, 0.45)})
+		if kind == "success" then line(ic, 8, 14, 12.5, 18.5, 2.2, col); line(ic, 12.5, 18.5, 20, 9.5, 2.2, col)
+		elseif kind == "error" then line(ic, 9.5, 9.5, 18.5, 18.5, 2.2, col); line(ic, 18.5, 9.5, 9.5, 18.5, 2.2, col)
+		else text(ic, {Size = UDim2.fromScale(1, 1), Text = kind == "warning" and "!" or "i", TextSize = 16, Font = Enum.Font.GothamBlack,
+			TextColor3 = col, TextXAlignment = Enum.TextXAlignment.Center}) end
+		fitLabel(text(card, {Size = UDim2.fromOffset(214, 13), Position = UDim2.fromOffset(54, 10), Text = tostring(title or ""), TextSize = 10}), 10)
+		fitLabel(text(card, {Size = UDim2.fromOffset(214, 24), Position = UDim2.fromOffset(54, 25), Text = tostring(msg or ""), TextSize = 8,
+			TextColor3 = GRAY, Font = Enum.Font.Gotham, TextWrapped = true, TextYAlignment = Enum.TextYAlignment.Top}), 8)
+		local bar = new("Frame", {Size = UDim2.fromOffset(260, 2), Position = UDim2.fromOffset(10, 54), BackgroundColor3 = col,
+			BackgroundTransparency = 0.25, BorderSizePixel = 0, Parent = card}, {round()})
 
-	local dead = false
-	local function dismiss()
-		if dead then return end; dead = true
-		for i, f in ipairs(notiActive) do if f == dismiss then table.remove(notiActive, i) break end end
-		tween(card, 0.3, {Position = UDim2.fromOffset(0, -90)}, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
-		tween(wrap, 0.25, {Size = UDim2.fromOffset(280, 0)}, Enum.EasingStyle.Quint, Enum.EasingDirection.InOut, 0.12)
-		task.delay(0.5, function() wrap:Destroy() end)
-	end
-	table.insert(notiActive, dismiss)
-	if #notiActive > NOTI_MAX then notiActive[1]() end
-	card.MouseButton1Click:Connect(dismiss)
-	tween(card, 0.5, {Position = UDim2.fromOffset(0, 0)}, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
-	tween(bar, duration, {Size = UDim2.fromOffset(0, 2)}, Enum.EasingStyle.Linear, Enum.EasingDirection.In)
-	task.delay(duration, dismiss)
+		local dead = false
+		local function dismiss()
+			if dead then return end; dead = true
+			for i, f in ipairs(notiActive) do if f == dismiss then table.remove(notiActive, i) break end end
+			tween(card, 0.3, {Position = UDim2.fromOffset(0, -90)}, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
+			tween(wrap, 0.25, {Size = UDim2.fromOffset(280, 0)}, Enum.EasingStyle.Quint, Enum.EasingDirection.InOut, 0.12)
+			task.delay(0.5, function() pcall(function() wrap:Destroy() end) end)
+		end
+		table.insert(notiActive, dismiss)
+		if #notiActive > NOTI_MAX then notiActive[1]() end
+		card.MouseButton1Click:Connect(dismiss)
+		tween(card, 0.5, {Position = UDim2.fromOffset(0, 0)}, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+		tween(bar, duration, {Size = UDim2.fromOffset(0, 2)}, Enum.EasingStyle.Linear, Enum.EasingDirection.In)
+		task.delay(duration, dismiss)
+	end)
 end
-pcall(function() getgenv().NightZNotify = Notify end)
+pcall(function() if getgenv then getgenv().NightZNotify = Notify end end)
 
 notifyAction = function(name, ...)
 	if NOTIFY_SKIP[name] then return end
@@ -985,17 +1037,19 @@ local toggleLogo = new("ImageLabel", {Size = UDim2.fromScale(0.66, 0.66), Anchor
 	ScaleType = Enum.ScaleType.Fit, ImageTransparency = 1, ZIndex = 11, Parent = toggle})
 
 task.spawn(function()
-	local res, why = resolveImage(LOGO_NUM)
-	if res then
-		logo.Image = res; toggleLogo.Image = res
-		pcall(function() ContentProvider:PreloadAsync({logo, toggleLogo}) end)
-	else
-		logo.Visible = false; toggleLogo.Visible = false
-		text(toggle, {Size = UDim2.fromScale(1, 1), Text = "Z", TextSize = 22, Font = Enum.Font.GothamBlack,
-			TextColor3 = RED, TextXAlignment = Enum.TextXAlignment.Center, ZIndex = 11})
-		text(header, {Size = UDim2.fromOffset(26, 26), Position = UDim2.fromOffset(18, 12), Text = "Z", TextSize = 22,
-			Font = Enum.Font.GothamBlack, TextColor3 = RED, TextXAlignment = Enum.TextXAlignment.Center})
-	end
+	pcall(function()
+		local res = resolveImage(LOGO_NUM)
+		if res then
+			logo.Image = res; toggleLogo.Image = res
+			pcall(function() ContentProvider:PreloadAsync({logo, toggleLogo}) end)
+		else
+			logo.Visible = false; toggleLogo.Visible = false
+			text(toggle, {Size = UDim2.fromScale(1, 1), Text = "Z", TextSize = 22, Font = Enum.Font.GothamBlack,
+				TextColor3 = RED, TextXAlignment = Enum.TextXAlignment.Center, ZIndex = 11})
+			text(header, {Size = UDim2.fromOffset(26, 26), Position = UDim2.fromOffset(18, 12), Text = "Z", TextSize = 22,
+				Font = Enum.Font.GothamBlack, TextColor3 = RED, TextXAlignment = Enum.TextXAlignment.Center})
+		end
+	end)
 end)
 
 showToggle = function()
@@ -1006,83 +1060,90 @@ showToggle = function()
 end
 
 task.spawn(function()
-	cur = homePage; homePage.Visible = true; setNav("Home", true)
-	tween(win, 0.55, {Size = UDim2.fromOffset(240, 2)}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
-	task.wait(0.5)
-	tween(win, 1.0, {Size = UDim2.fromOffset(W, H), BackgroundColor3 = Color3.new(0, 0, 0)}, Enum.EasingStyle.Quint, Enum.EasingDirection.InOut)
-	tween(winStroke, 1.0, {Transparency = 0.3})
-	task.wait(1.0)
+	pcall(function()
+		cur = homePage; homePage.Visible = true; setNav("Home", true)
+		tween(win, 0.55, {Size = UDim2.fromOffset(240, 2)}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+		task.wait(0.5)
+		tween(win, 1.0, {Size = UDim2.fromOffset(W, H), BackgroundColor3 = Color3.new(0, 0, 0)}, Enum.EasingStyle.Quint, Enum.EasingDirection.InOut)
+		tween(winStroke, 1.0, {Transparency = 0.3})
+		task.wait(1.0)
 
-	local waited = 0
-	while not loaded and waited < 20 do waited += task.wait(0.1) end
+		local waited = 0
+		while not loaded and waited < 20 do waited += task.wait(0.1) end
 
-	cs.dist, cs.pitch = baseDist * 1.14, 0.06
-	numTween(cs.dist, baseDist, 3.6, Enum.EasingStyle.Sine, Enum.EasingDirection.Out, function(x) cs.dist = x end)
-	local function setLights(on)
-		for _, p in ipairs(lightsOnly) do p.Transparency = on and orig[p] or 1 end
-	end
-	local flare = new("Frame", {Size = UDim2.fromOffset(0, 2), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromOffset(W / 2, H * 0.56),
-		BackgroundColor3 = RED, BorderSizePixel = 0, ZIndex = 4, Parent = win}, {
-		new("UIGradient", {Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.5, 0), NumberSequenceKeypoint.new(1, 1)})})})
-	for i, st in ipairs({{true, 0.07}, {false, 0.06}, {true, 0.09}, {false, 0.05}, {true, 0.12}, {false, 0.09}}) do
-		setLights(st[1])
-		if i == 1 then tween(flare, 0.8, {Size = UDim2.fromOffset(W * 0.95, 2)}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out) end
-		task.wait(st[2])
-	end
-	for _, p in ipairs(lightsOnly) do tween(p, 0.6, {Transparency = orig[p]}, Enum.EasingStyle.Quad, Enum.EasingDirection.Out) end
-	tween(flare, 0.9, {BackgroundTransparency = 1}, Enum.EasingStyle.Sine, Enum.EasingDirection.In, 0.3)
-	task.delay(1.4, function() flare:Destroy() end)
-	task.wait(0.9)
-
-	v.LightDirection = Vector3.new(0.6, -0.3, -0.8)
-	tween(v, 3.2, {LightDirection = Vector3.new(-0.5, -1, 0.6)}, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
-	local n = 0
-	for _, p in ipairs(parts) do
-		if not table.find(lightsOnly, p) then
-			n += 1; tween(p, 1.1, {Transparency = orig[p]}, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, n * 0.06)
+		cs.dist, cs.pitch = baseDist * 1.14, 0.06
+		numTween(cs.dist, baseDist, 3.6, Enum.EasingStyle.Sine, Enum.EasingDirection.Out, function(x) cs.dist = x end)
+		local function setLights(on)
+			for _, p in ipairs(lightsOnly) do pcall(function() p.Transparency = on and orig[p] or 1 end) end
 		end
-	end
-	if badgeDecal then tween(badgeDecal, 1.2, {Transparency = 0}, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, 0.8) end
-	task.wait(0.9)
+		local flare = new("Frame", {Size = UDim2.fromOffset(0, 2), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromOffset(W / 2, H * 0.56),
+			BackgroundColor3 = RED, BorderSizePixel = 0, ZIndex = 4, Parent = win}, {
+			new("UIGradient", {Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.5, 0), NumberSequenceKeypoint.new(1, 1)})})})
+		for i, st in ipairs({{true, 0.07}, {false, 0.06}, {true, 0.09}, {false, 0.05}, {true, 0.12}, {false, 0.09}}) do
+			setLights(st[1])
+			if i == 1 then tween(flare, 0.8, {Size = UDim2.fromOffset(W * 0.95, 2)}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out) end
+			task.wait(st[2])
+		end
+		for _, p in ipairs(lightsOnly) do pcall(function() tween(p, 0.6, {Transparency = orig[p]}, Enum.EasingStyle.Quad, Enum.EasingDirection.Out) end) end
+		tween(flare, 0.9, {BackgroundTransparency = 1}, Enum.EasingStyle.Sine, Enum.EasingDirection.In, 0.3)
+		task.delay(1.4, function() pcall(function() flare:Destroy() end) end)
+		task.wait(0.9)
 
-	local y0, p0, d0, ty0, S = cs.yaw, cs.pitch, cs.dist, cs.ty, SCENES.home
-	numTween(0, 1, 3.0, Enum.EasingStyle.Quint, Enum.EasingDirection.InOut, function(a)
-		cs.yaw = y0 + (S.yaw - y0) * a; cs.pitch = p0 + (S.pitch - p0) * a
-		cs.dist = d0 + (baseDist * S.dist - d0) * a; cs.ty = ty0 + (S.ty - ty0) * a
+		v.LightDirection = Vector3.new(0.6, -0.3, -0.8)
+		tween(v, 3.2, {LightDirection = Vector3.new(-0.5, -1, 0.6)}, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
+		local n = 0
+		for _, p in ipairs(parts) do
+			if not table.find(lightsOnly, p) then
+				n += 1; pcall(function() tween(p, 1.1, {Transparency = orig[p]}, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, n * 0.06) end)
+			end
+		end
+		if badgeDecal then tween(badgeDecal, 1.2, {Transparency = 0}, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, 0.8) end
+		task.wait(0.9)
+
+		local y0, p0, d0, ty0, S = cs.yaw, cs.pitch, cs.dist, cs.ty, SCENES.home
+		numTween(0, 1, 3.0, Enum.EasingStyle.Quint, Enum.EasingDirection.InOut, function(a)
+			cs.yaw = y0 + (S.yaw - y0) * a; cs.pitch = p0 + (S.pitch - p0) * a
+			cs.dist = d0 + (baseDist * S.dist - d0) * a; cs.ty = ty0 + (S.ty - ty0) * a
+		end)
+		task.wait(2.0)
+
+		revealUI()
+		task.wait(1.7)
+		idleT0, idle, ready = t, true, true
+		showToggle()
+		if Notify then
+			pcall(Notify, "NIGHT Z SERIES", nt("Loaded. Press RightShift to hide/show the menu.", "Đã tải xong. Nhấn RightShift để ẩn/hiện menu."), "success", 4)
+		end
+		startShine()
 	end)
-	task.wait(2.0)
-
-	revealUI()
-	task.wait(1.7)
-	idleT0, idle, ready = t, true, true
-	showToggle()
-	Notify("NIGHT Z SERIES", nt("Loaded. Press RightShift to hide/show the menu.", "Đã tải xong. Nhấn RightShift để ẩn/hiện menu."), "success", 4)
-	startShine()
 end)
 
 local winScale = new("UIScale", {Scale = 1, Parent = win})
 local menuOpen, savedPos = true, nil
 local function setMenu(show)
 	if not ready then return end
-	toggleScale.Scale = 0.78
-	tween(toggleScale, 0.5, {Scale = 1}, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
-	toggleLogo.Rotation = 0
-	tween(toggleLogo, 0.6, {Rotation = show and 360 or -360}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
-	if show then
-		win.Visible = true; v.Visible = true; v.ImageTransparency = 1
-		tween(v, 0.45, {ImageTransparency = SCENES[curScene].dim}, Enum.EasingStyle.Sine, Enum.EasingDirection.Out, 0.2)
-		winScale.Scale = 0.05; win.Position = toggle.Position
-		tween(win, 0.6, {Position = savedPos or UDim2.fromScale(0.5, 0.5)}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
-		tween(winScale, 0.6, {Scale = 1}, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
-		tween(toggleStroke, 0.3, {Transparency = 0.3})
-	else
-		if winScale.Scale > 0.95 then savedPos = win.Position end
-		tween(v, 0.14, {ImageTransparency = 1}, Enum.EasingStyle.Sine, Enum.EasingDirection.Out)
-		task.delay(0.15, function() if not menuOpen then v.Visible = false end end)
-		tween(win, 0.3, {Position = toggle.Position}, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
-		tween(winScale, 0.3, {Scale = 0.05}, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
-		task.delay(0.32, function() if not menuOpen then win.Visible = false end end)
-	end
+	pcall(function()
+		toggleScale.Scale = 0.78
+		tween(toggleScale, 0.5, {Scale = 1}, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+		toggleLogo.Rotation = 0
+		tween(toggleLogo, 0.6, {Rotation = show and 360 or -360}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+		if show then
+			win.Visible = true; v.Visible = true; v.ImageTransparency = 1
+			local dim = (SCENES[curScene] and SCENES[curScene].dim) or 0
+			tween(v, 0.45, {ImageTransparency = dim}, Enum.EasingStyle.Sine, Enum.EasingDirection.Out, 0.2)
+			winScale.Scale = 0.05; win.Position = toggle.Position
+			tween(win, 0.6, {Position = savedPos or UDim2.fromScale(0.5, 0.5)}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+			tween(winScale, 0.6, {Scale = 1}, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+			tween(toggleStroke, 0.3, {Transparency = 0.3})
+		else
+			if winScale.Scale > 0.95 then savedPos = win.Position end
+			tween(v, 0.14, {ImageTransparency = 1}, Enum.EasingStyle.Sine, Enum.EasingDirection.Out)
+			task.delay(0.15, function() if not menuOpen then pcall(function() v.Visible = false end) end end)
+			tween(win, 0.3, {Position = toggle.Position}, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
+			tween(winScale, 0.3, {Scale = 0.05}, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
+			task.delay(0.32, function() if not menuOpen then pcall(function() win.Visible = false end) end)
+		end
+	end)
 end
 
 do
@@ -1097,29 +1158,33 @@ do
 	end)
 	UIS.InputChanged:Connect(function(i)
 		if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
-			local d = Vector2.new(i.Position.X, i.Position.Y) - startMouse
-			if not moved and d.Magnitude > 6 then moved = true; tween(toggleScale, 0.15, {Scale = 1.15}, Enum.EasingStyle.Quad, Enum.EasingDirection.Out) end
-			if moved then
-				local sz = gui.AbsoluteSize
-				curX = math.clamp(startCenter.X + d.X, 23, sz.X - 23); curY = math.clamp(startCenter.Y + d.Y, 23, sz.Y - 23)
-				toggle.Position = UDim2.fromOffset(curX, curY)
-			end
+			pcall(function()
+				local d = Vector2.new(i.Position.X, i.Position.Y) - startMouse
+				if not moved and d.Magnitude > 6 then moved = true; tween(toggleScale, 0.15, {Scale = 1.15}, Enum.EasingStyle.Quad, Enum.EasingDirection.Out) end
+				if moved then
+					local sz = gui.AbsoluteSize
+					curX = math.clamp(startCenter.X + d.X, 23, sz.X - 23); curY = math.clamp(startCenter.Y + d.Y, 23, sz.Y - 23)
+					toggle.Position = UDim2.fromOffset(curX, curY)
+				end
+			end)
 		end
 	end)
 	UIS.InputEnded:Connect(function(i)
 		if dragging and (i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch) then
 			dragging = false
-			if moved then
-				local sz = gui.AbsoluteSize
-				tween(toggle, 0.45, {Position = UDim2.fromOffset(curX < sz.X / 2 and 39 or sz.X - 39, curY)}, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
-				tween(toggleScale, 0.3, {Scale = 1}, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
-			else
-				menuOpen = not menuOpen; setMenu(menuOpen)
-			end
+			pcall(function()
+				if moved then
+					local sz = gui.AbsoluteSize
+					tween(toggle, 0.45, {Position = UDim2.fromOffset(curX < sz.X / 2 and 39 or sz.X - 39, curY)}, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+					tween(toggleScale, 0.3, {Scale = 1}, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+				else
+					menuOpen = not menuOpen; setMenu(menuOpen)
+				end
+			end)
 		end
 	end)
 end
-toggle.MouseButton2Click:Connect(function() gui:Destroy() end)
+toggle.MouseButton2Click:Connect(function() pcall(function() gui:Destroy() end) end)
 toggle.MouseEnter:Connect(function() tween(toggleScale, 0.25, {Scale = 1.08}, Enum.EasingStyle.Back, Enum.EasingDirection.Out) end)
 toggle.MouseLeave:Connect(function() tween(toggleScale, 0.25, {Scale = 1}, Enum.EasingStyle.Quad, Enum.EasingDirection.Out) end)
 
@@ -1135,6 +1200,11 @@ task.spawn(function()
 end)
 
 local c3 = UIS.InputBegan:Connect(function(i, gp)
-	if not gp and i.KeyCode == Enum.KeyCode.RightShift then menuOpen = not menuOpen; setMenu(menuOpen) end
+	if not gp and i.KeyCode == Enum.KeyCode.RightShift then
+		menuOpen = not menuOpen; setMenu(menuOpen)
+	end
 end)
-gui.Destroying:Connect(function() conStep:Disconnect(); c3:Disconnect() end)
+gui.Destroying:Connect(function()
+	pcall(function() conStep:Disconnect() end)
+	pcall(function() c3:Disconnect() end)
+end)
