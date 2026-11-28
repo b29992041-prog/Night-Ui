@@ -54,8 +54,7 @@ end)
 
 local ABOUT = {
 	owner = "Night Z", ver = "Z 1.0", sub = "Night Z Series Hub",
-	plan = "Premium", days = 23, expire = "11 Dec 2026", progress = 0.7,
-	discord = "discord.gg/nightzseries", site = "nightzseries.site",
+	plan = "Premium", expire = "Forever", progress = 1,
 }
 
 local Hooks = {}
@@ -109,7 +108,7 @@ local CONTENT = {
 	server  = {rows = {{"Server Hop", "action"}, {"Rejoin", "action"}}},
 	config  = {rows = {{"Save Config", "action"}, {"Load Config", "action"}}},
 	setting = {rows = {{"Language", "lang"}, {"Notifications", "toggle", true}, {"Test Notification", "action"}, {"Reset UI Position", "action"}}},
-	channel = {rows = {{"Copy Discord Link", "action"}, {"Update Log", "action"}}},
+	channel = {rows = {{"Update Log", "action"}}},
 	misc    = {rows = {{"Anti AFK", "toggle"}, {"FPS Boost", "toggle"}}},
 	aim     = {rows = {{"Aim Assist", "toggle"}, {"Show FOV", "toggle"}}},
 }
@@ -225,21 +224,14 @@ end
 local function resolveImage(id)
 	local url = "rbxassetid://" .. string.format("%.0f", id)
 	local base = assetInfo(id)
-	if base and base.AssetTypeId == 1 then return url, "đã là Image" end
-	local ok, objs = pcall(function() return game:GetObjects(url) end)
-	if ok and objs and objs[1] then
-		local o = objs[1]
-		local d = (o:IsA("Decal") or o:IsA("Texture")) and o or o:FindFirstChildWhichIsA("Decal", true)
-		if d and d.Texture ~= "" then return d.Texture, "lấy từ Decal" end
-	end
+	if base and base.AssetTypeId == 1 then return url, "ok" end
 	for _, off in ipairs({-1, 1, -2, 2}) do
 		local ci = assetInfo(id + off)
 		if ci and ci.AssetTypeId == 1 and (not base or ci.Name == base.Name) then
-			return "rbxassetid://" .. string.format("%.0f", id + off), "ID cạnh " .. off
+			return "rbxassetid://" .. string.format("%.0f", id + off), "near"
 		end
 	end
-	if not base then return url, "giữ nguyên ID" end
-	return nil, "không phải Image"
+	return url, "fallback"
 end
 
 -- ===== ICON & BOX =====
@@ -264,15 +256,9 @@ local function drawIcon(kind, h, col)
 			Image = "rbxassetid://" .. string.format("%.0f", asset), ImageColor3 = col, Parent = h})
 		return
 	end
-	if kind == "chat" then
-		rbox(h, 1.5, 2, 15, 11, 5); line(h, 5, 13, 4, 16.5, 1.6, col); line(h, 4, 16.5, 8, 13.2, 1.6, col)
-		dot(h, 6, 7.5, 1.6, col); dot(h, 9, 7.5, 1.6, col); dot(h, 12, 7.5, 1.6, col)
-	elseif kind == "crown" then
+	if kind == "crown" then
 		poly(h, {{2.5, 14}, {2.5, 6.5}, {6.2, 10}, {9, 4}, {11.8, 10}, {15.5, 6.5}, {15.5, 14}}, 1.6)
 		line(h, 2.5, 15.5, 15.5, 15.5, 1.8, col); dot(h, 2.5, 5.8, 2.4, col); dot(h, 9, 3.2, 2.4, col); dot(h, 15.5, 5.8, 2.4, col)
-	elseif kind == "globe" then
-		ring(h, 1, 1, 16, 16, col); ring(h, 5.5, 1, 7, 16, col)
-		line(h, 1, 9, 17, 9, 1.3, col); line(h, 2.6, 5, 15.4, 5, 1.1, col); line(h, 2.6, 13, 15.4, 13, 1.1, col)
 	end
 end
 local function iconBox(parent, kind, x, y, size)
@@ -292,11 +278,11 @@ local winStroke = stroke(RED, 1.2, 1)
 local win = new("Frame", {
 	Name = "Window", Size = UDim2.fromOffset(0, 2),
 	Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = Vector2.new(0.5, 0.5),
-	BackgroundColor3 = WHITE, BorderSizePixel = 0, Active = true, Parent = gui,
+	BackgroundColor3 = WHITE, BorderSizePixel = 0, ClipsDescendants = true, Active = true, Parent = gui,
 }, {corner(22), winStroke})
 
 local bgGroup = new("Frame", {Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
-	ClipsDescendants = true, BorderSizePixel = 0, Visible = false, Parent = win}, {corner(22)})
+	ClipsDescendants = true, BorderSizePixel = 0, Visible = false, ZIndex = 1, Parent = win}, {corner(22)})
 local bgFill = new("Frame", {Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(42, 15, 22),
 	BackgroundTransparency = 1, BorderSizePixel = 0, Parent = bgGroup}, {
 	new("UIGradient", {Rotation = 90, Transparency = NumberSequence.new({
@@ -325,7 +311,7 @@ local function setBg(target, dur)
 end
 
 local v = new("ViewportFrame", {
-	Name = "VehicleViewport", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
+	Name = "VehicleViewport", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, ZIndex = 1,
 	Ambient = Color3.fromRGB(130, 105, 112), LightColor = Color3.fromRGB(255, 225, 232),
 	LightDirection = Vector3.new(-0.5, -1, 0.6), Parent = win,
 }, {corner(22)})
@@ -343,7 +329,7 @@ local shine = new("Frame", {Size = UDim2.fromOffset(46, H * 1.6), AnchorPoint = 
 		NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.5, 0.85), NumberSequenceKeypoint.new(1, 1)})})})
 
 local ui = new("Frame", {Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
-	ClipsDescendants = true, BorderSizePixel = 0, Visible = false, ZIndex = 3, Parent = win}, {corner(22)})
+	ClipsDescendants = true, BorderSizePixel = 0, Visible = false, ZIndex = 4, Parent = win}, {corner(22)})
 
 -- ================= TRANG =================
 local pageOrder, scales, stagger, cur = {}, {}, {}, nil
@@ -359,10 +345,9 @@ local homePage, gridPage, aboutPage = newPage(1), newPage(2), newPage(3)
 
 -- ================= HEADER =================
 local header = new("Frame", {Size = UDim2.new(1, 0, 0, 50), BackgroundTransparency = 1,
-	ZIndex = 5, BorderSizePixel = 0, Parent = ui})
+	ZIndex = 6, BorderSizePixel = 0, Parent = ui})
 local logo = new("ImageLabel", {Size = UDim2.fromOffset(26, 26), Position = UDim2.fromOffset(18, 12), BackgroundTransparency = 1,
 	Image = LOGO_ID, ImageColor3 = RED, ScaleType = Enum.ScaleType.Fit, Parent = header})
-task.spawn(function() pcall(function() ContentProvider:PreloadAsync({logo}) end) end)
 text(header, {Size = UDim2.fromOffset(120, 12), Position = UDim2.fromOffset(50, 15), Text = "NIGHT Z SERIES", TextSize = 11})
 text(header, {Size = UDim2.fromOffset(120, 8), Position = UDim2.fromOffset(50, 28), Text = "Z SERIES HUB", TextSize = 7, TextColor3 = RED})
 
@@ -469,6 +454,7 @@ local VI = {
 	["Q U I C K   T A B S"] = spaced("TAB NHANH"), ["A L L   T A B S"] = spaced("TẤT CẢ TAB"),
 	["O W N E R"] = spaced("CHỦ SỞ HỮU"), ["S U B S C R I P T I O N"] = spaced("GÓI ĐĂNG KÝ"),
 	["ACTIVE"] = "ĐANG DÙNG", ["PAGE"] = "TRANG",
+	["Infinite Days"] = "Vô hạn ngày", ["Forever"] = "Vĩnh viễn",
 	["MAIN"] = "CHÍNH", ["PLAYER"] = "NGƯỜI CHƠI", ["VISUAL"] = "HIỂN THỊ", ["SERVER"] = "MÁY CHỦ",
 	["CONFIG"] = "CẤU HÌNH", ["SETTING"] = "CÀI ĐẶT", ["CHANNEL"] = "KÊNH", ["MISC"] = "KHÁC", ["AIM"] = "NGẮM",
 	["Farm, steal and race"] = "Cày, trộm và đua", ["Speed, fly and move"] = "Tốc độ, bay và di chuyển",
@@ -489,7 +475,7 @@ local VI = {
 	["Fly"] = "Bay", ["Reset"] = "Đặt lại", ["ESP Players"] = "ESP người chơi", ["Highlights"] = "Làm nổi bật",
 	["Server Hop"] = "Đổi máy chủ", ["Rejoin"] = "Vào lại", ["Save Config"] = "Lưu cấu hình", ["Load Config"] = "Tải cấu hình",
 	["Language"] = "Ngôn ngữ", ["Notifications"] = "Thông báo", ["Test Notification"] = "Thử thông báo", ["Reset UI Position"] = "Đặt lại vị trí menu",
-	["Copy Discord Link"] = "Sao chép link Discord", ["Update Log"] = "Nhật ký cập nhật",
+	["Update Log"] = "Nhật ký cập nhật",
 	["Anti AFK"] = "Chống AFK", ["FPS Boost"] = "Tăng FPS", ["Aim Assist"] = "Hỗ trợ ngắm", ["Show FOV"] = "Hiện vòng FOV",
 }
 
@@ -499,8 +485,6 @@ local function translateText(orig)
 	if VI[orig] then return VI[orig] end
 	local rest = orig:match("^PAGE / (.+)$")
 	if rest then return VI["PAGE"] .. " / " .. (VI[rest] or rest) end
-	local n = orig:match("^Expires in (%d+) days$")
-	if n then return "Hết hạn sau " .. n .. " ngày" end
 	return orig
 end
 local function registerTexts(root)
@@ -532,7 +516,10 @@ end
 local function setLang(l)
 	if l == LANG then return end
 	LANG = l; applyLang(); layoutNav(); refreshLangBtns()
-	if Notify then pcall(Notify, nt("Language", "Ngôn ngữ"), nt("Switched to English", "Đã chuyển sang Tiếng Việt"), "success", 2.5) end
+	if Notify then
+		local msg = (l == "vi") and "Đã chuyển sang Tiếng Việt" or "Switched to English"
+		pcall(Notify, nt("Language", "Ngôn ngữ"), msg, "success", 2.5)
+	end
 	pcall(function() if writefile then writefile("NightZSeries_lang.txt", l) end end)
 end
 
@@ -613,7 +600,7 @@ for _, tab in ipairs(TABS) do
 	if c.chips then
 		local chipBtns, scrolls, chipIndex, activeChip = {}, {}, {}, nil
 		for i, name in ipairs(c.order) do chipIndex[name] = i end
-		local function select(name, instant)
+		local function selectChip(name, instant)
 			if name == activeChip then return end
 			local prev, dir = activeChip, (activeChip and chipIndex[name] > chipIndex[activeChip]) and 1 or -1
 			activeChip = name
@@ -644,9 +631,9 @@ for _, tab in ipairs(TABS) do
 			for gi, g in ipairs(c.chips[name]) do
 				buildGroup(sc, 12 + ((gi - 1) % 2) * 192, math.floor((gi - 1) / 2) * 100, g)
 			end
-			b.MouseButton1Click:Connect(function() select(name) end)
+			b.MouseButton1Click:Connect(function() selectChip(name) end)
 		end
-		select(c.order[1], true)
+		selectChip(c.order[1], true)
 	else
 		local sc = newScroll(p, 92, H - 102)
 		for i, r in ipairs(c.rows) do
@@ -742,7 +729,7 @@ local function revealUI()
 	end
 end
 
--- ================= TRANG ABOUT (theo mẫu ảnh 1000022596.jpg + tông đỏ) =================
+-- ================= TRANG ABOUT =================
 local AX, AW = 244, 158
 text(aboutPage, {Size = UDim2.fromOffset(100, 8), Position = UDim2.fromOffset(AX, 56), Text = "O W N E R", TextSize = 6, TextColor3 = RED_SOFT})
 text(aboutPage, {Size = UDim2.fromOffset(108, 24), Position = UDim2.fromOffset(AX - 1, 64), Text = ABOUT.owner, TextSize = 19, Font = Enum.Font.GothamBlack})
@@ -771,35 +758,24 @@ local pill = new("Frame", {Size = UDim2.fromOffset(38, 11), Position = UDim2.fro
 	BackgroundColor3 = RED, BorderSizePixel = 0, Parent = sub}, {round()})
 text(pill, {Size = UDim2.fromScale(1, 1), Text = "ACTIVE", TextSize = 5.5, TextColor3 = WHITE, TextXAlignment = Enum.TextXAlignment.Center})
 
-text(sub, {Size = UDim2.fromOffset(82, 8), Position = UDim2.fromOffset(8, 39), Text = "Expires in " .. ABOUT.days .. " days",
+text(sub, {Size = UDim2.fromOffset(82, 8), Position = UDim2.fromOffset(8, 39), Text = "Infinite Days",
 	TextSize = 5.5, TextColor3 = GRAY, Font = Enum.Font.Gotham})
 text(sub, {Size = UDim2.fromOffset(64, 8), Position = UDim2.fromOffset(AW - 72, 39), Text = ABOUT.expire,
 	TextSize = 5.5, TextColor3 = RED_SOFT, Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Right})
 
 local track = new("Frame", {Size = UDim2.fromOffset(AW - 16, 3), Position = UDim2.fromOffset(8, 52),
 	BackgroundColor3 = Color3.fromRGB(56, 18, 25), BorderSizePixel = 0, Parent = sub}, {round()})
-local fill = new("Frame", {Size = UDim2.fromScale(0, 1), BackgroundColor3 = RED, BorderSizePixel = 0, Parent = track}, {round()})
-
-local cardDiscord = aboutCard(176, 42, "chat", "D I S C O R D", ABOUT.discord, 7.5, false)
-local cardSite = aboutCard(224, 40, "globe", "W E B S I T E", ABOUT.site, 8.5, false)
+local fill = new("Frame", {Size = UDim2.fromScale(1, 1), BackgroundColor3 = RED, BorderSizePixel = 0, Parent = track}, {round()})
 
 stagger[aboutPage] = {}
-for _, c in ipairs({sub, cardDiscord, cardSite}) do table.insert(stagger[aboutPage], {obj = c, base = c.Position}) end
+for _, c in ipairs({sub}) do table.insert(stagger[aboutPage], {obj = c, base = c.Position}) end
 onShow[aboutPage] = function()
 	fill.Size = UDim2.fromScale(0, 1)
-	tween(fill, 1.2, {Size = UDim2.fromScale(ABOUT.progress, 1)}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out, 0.45)
+	tween(fill, 1.2, {Size = UDim2.fromScale(1, 1)}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out, 0.45)
 end
 
 -- ================= HOOKS & DRAG =================
 Hooks["Reset UI Position"] = function() win.Position = UDim2.fromScale(0.5, 0.5) end
-Hooks["Copy Discord Link"] = function()
-	local ok = pcall(function() if setclipboard then setclipboard(ABOUT.discord) else error("no clipboard") end end)
-	if Notify then
-		pcall(Notify, nt("Discord link", "Link Discord"),
-			ok and nt("Copied to clipboard", "Đã sao chép") or nt("Clipboard not supported", "Executor không hỗ trợ clipboard"),
-			ok and "success" or "warning", 3, true)
-	end
-end
 Hooks["Notifications"] = function(on)
 	notifyEnabled = on
 	if Notify then
@@ -868,19 +844,16 @@ task.spawn(function()
 		local results, done, total = {}, 0, #SPECS + 1
 		for i, sp in ipairs(SPECS) do
 			task.spawn(function()
-				for _ = 1, 3 do
-					local ok, res = pcall(function()
-						return InsertService:CreateMeshPartAsync("rbxassetid://" .. sp[2], Enum.CollisionFidelity.Default, Enum.RenderFidelity.Performance)
-					end)
-					if ok and res then results[i] = res break end
-					task.wait(0.3)
-				end
+				local ok, res = pcall(function()
+					return InsertService:CreateMeshPartAsync("rbxassetid://" .. sp[2], Enum.CollisionFidelity.Default, Enum.RenderFidelity.Performance)
+				end)
+				if ok and res then results[i] = res end
 				done += 1
 			end)
 		end
 		task.spawn(function() pcall(function() ContentProvider:PreloadAsync({badgeDecal}) end); done += 1 end)
 		local t0 = os.clock()
-		while done < total and os.clock() - t0 < 25 do task.wait() end
+		while done < total and os.clock() - t0 < 3 do task.wait(0.05) end
 
 		for i, sp in ipairs(SPECS) do
 			local r = results[i]
@@ -902,7 +875,7 @@ task.spawn(function()
 		})
 		badgeDecal.Parent = badge
 		local okBox, box, size = pcall(function() return car:GetBoundingBox() end)
-		if okBox and box and size then
+		if okBox and box and size and size.Magnitude > 0 then
 			pcall(function() car:PivotTo(CFrame.new(-box.Position) * car:GetPivot()) end)
 			baseDist = size.Magnitude / (2 * math.tan(math.rad(cam.FieldOfView / 2))) * 0.8
 		end
@@ -959,7 +932,7 @@ end)
 
 -- ================= THÔNG BÁO =================
 local NOTI_COL = {info = RED, success = RED_SOFT, warning = Color3.fromRGB(245, 120, 90), error = Color3.fromRGB(165, 22, 36)}
-local NOTIFY_SKIP = {Language = true, Notifications = true, ["Test Notification"] = true, ["Reset UI Position"] = true, ["Copy Discord Link"] = true}
+local NOTIFY_SKIP = {Language = true, Notifications = true, ["Test Notification"] = true, ["Reset UI Position"] = true}
 local NOTI_MAX, notiCount, notiActive = 4, 0, {}
 local notiHolder = new("Frame", {Name = "Notifications", AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 18),
 	Size = UDim2.fromOffset(280, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, ZIndex = 50, Parent = gui}, {
@@ -1019,11 +992,6 @@ notifyAction = function(name, ...)
 end
 
 -- ================= INTRO & TOGGLE =================
-task.spawn(function()
-	local imgs = {}
-	for _, d in ipairs(ui:GetDescendants()) do if d:IsA("ImageLabel") then table.insert(imgs, d) end end
-	pcall(function() ContentProvider:PreloadAsync(imgs) end)
-end)
 registerTexts(ui); applyLang(); refreshLangBtns()
 
 local TOGGLE_CENTER = UDim2.fromOffset(39, 103)
@@ -1042,12 +1010,6 @@ task.spawn(function()
 		if res then
 			logo.Image = res; toggleLogo.Image = res
 			pcall(function() ContentProvider:PreloadAsync({logo, toggleLogo}) end)
-		else
-			logo.Visible = false; toggleLogo.Visible = false
-			text(toggle, {Size = UDim2.fromScale(1, 1), Text = "Z", TextSize = 22, Font = Enum.Font.GothamBlack,
-				TextColor3 = RED, TextXAlignment = Enum.TextXAlignment.Center, ZIndex = 11})
-			text(header, {Size = UDim2.fromOffset(26, 26), Position = UDim2.fromOffset(18, 12), Text = "Z", TextSize = 22,
-				Font = Enum.Font.GothamBlack, TextColor3 = RED, TextXAlignment = Enum.TextXAlignment.Center})
 		end
 	end)
 end)
@@ -1060,62 +1022,60 @@ showToggle = function()
 end
 
 task.spawn(function()
-	pcall(function()
-		cur = homePage; homePage.Visible = true; setNav("Home", true)
-		tween(win, 0.55, {Size = UDim2.fromOffset(240, 2)}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
-		task.wait(0.5)
-		tween(win, 1.0, {Size = UDim2.fromOffset(W, H), BackgroundColor3 = Color3.new(0, 0, 0)}, Enum.EasingStyle.Quint, Enum.EasingDirection.InOut)
-		tween(winStroke, 1.0, {Transparency = 0.3})
-		task.wait(1.0)
+	cur = homePage; homePage.Visible = true; setNav("Home", true)
+	tween(win, 0.55, {Size = UDim2.fromOffset(240, 2)}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+	task.wait(0.5)
+	tween(win, 1.0, {Size = UDim2.fromOffset(W, H), BackgroundColor3 = Color3.new(0, 0, 0)}, Enum.EasingStyle.Quint, Enum.EasingDirection.InOut)
+	tween(winStroke, 1.0, {Transparency = 0.3})
+	task.wait(1.0)
 
-		local waited = 0
-		while not loaded and waited < 20 do waited += task.wait(0.1) end
+	local waited = 0
+	while not loaded and waited < 3 do waited += task.wait(0.1) end
 
-		cs.dist, cs.pitch = baseDist * 1.14, 0.06
-		numTween(cs.dist, baseDist, 3.6, Enum.EasingStyle.Sine, Enum.EasingDirection.Out, function(x) cs.dist = x end)
-		local function setLights(on)
-			for _, p in ipairs(lightsOnly) do pcall(function() p.Transparency = on and orig[p] or 1 end) end
+	cs.dist, cs.pitch = baseDist * 1.14, 0.06
+	numTween(cs.dist, baseDist, 1.8, Enum.EasingStyle.Sine, Enum.EasingDirection.Out, function(x) cs.dist = x end)
+	local function setLights(on)
+		for _, p in ipairs(lightsOnly) do pcall(function() p.Transparency = on and orig[p] or 1 end) end
+	end
+	local flare = new("Frame", {Size = UDim2.fromOffset(0, 2), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromOffset(W / 2, H * 0.56),
+		BackgroundColor3 = RED, BorderSizePixel = 0, ZIndex = 4, Parent = win}, {
+		new("UIGradient", {Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.5, 0), NumberSequenceKeypoint.new(1, 1)})})})
+	for i, st in ipairs({{true, 0.07}, {false, 0.06}, {true, 0.09}, {false, 0.05}, {true, 0.12}, {false, 0.09}}) do
+		setLights(st[1])
+		if i == 1 then tween(flare, 0.8, {Size = UDim2.fromOffset(W * 0.95, 2)}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out) end
+		task.wait(st[2])
+	end
+	for _, p in ipairs(lightsOnly) do pcall(function() tween(p, 0.6, {Transparency = orig[p]}, Enum.EasingStyle.Quad, Enum.EasingDirection.Out) end) end
+	tween(flare, 0.9, {BackgroundTransparency = 1}, Enum.EasingStyle.Sine, Enum.EasingDirection.In, 0.3)
+	task.delay(1.4, function() pcall(function() flare:Destroy() end) end)
+	task.wait(0.5)
+
+	v.LightDirection = Vector3.new(0.6, -0.3, -0.8)
+	tween(v, 1.8, {LightDirection = Vector3.new(-0.5, -1, 0.6)}, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
+	local n = 0
+	for _, p in ipairs(parts) do
+		if not table.find(lightsOnly, p) then
+			n += 1; pcall(function() tween(p, 0.9, {Transparency = orig[p]}, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, n * 0.04) end)
 		end
-		local flare = new("Frame", {Size = UDim2.fromOffset(0, 2), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromOffset(W / 2, H * 0.56),
-			BackgroundColor3 = RED, BorderSizePixel = 0, ZIndex = 4, Parent = win}, {
-			new("UIGradient", {Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.5, 0), NumberSequenceKeypoint.new(1, 1)})})})
-		for i, st in ipairs({{true, 0.07}, {false, 0.06}, {true, 0.09}, {false, 0.05}, {true, 0.12}, {false, 0.09}}) do
-			setLights(st[1])
-			if i == 1 then tween(flare, 0.8, {Size = UDim2.fromOffset(W * 0.95, 2)}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out) end
-			task.wait(st[2])
-		end
-		for _, p in ipairs(lightsOnly) do pcall(function() tween(p, 0.6, {Transparency = orig[p]}, Enum.EasingStyle.Quad, Enum.EasingDirection.Out) end) end
-		tween(flare, 0.9, {BackgroundTransparency = 1}, Enum.EasingStyle.Sine, Enum.EasingDirection.In, 0.3)
-		task.delay(1.4, function() pcall(function() flare:Destroy() end) end)
-		task.wait(0.9)
+	end
+	if badgeDecal then tween(badgeDecal, 0.9, {Transparency = 0}, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, 0.5) end
+	task.wait(0.6)
 
-		v.LightDirection = Vector3.new(0.6, -0.3, -0.8)
-		tween(v, 3.2, {LightDirection = Vector3.new(-0.5, -1, 0.6)}, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
-		local n = 0
-		for _, p in ipairs(parts) do
-			if not table.find(lightsOnly, p) then
-				n += 1; pcall(function() tween(p, 1.1, {Transparency = orig[p]}, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, n * 0.06) end)
-			end
-		end
-		if badgeDecal then tween(badgeDecal, 1.2, {Transparency = 0}, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, 0.8) end
-		task.wait(0.9)
-
-		local y0, p0, d0, ty0, S = cs.yaw, cs.pitch, cs.dist, cs.ty, SCENES.home
-		numTween(0, 1, 3.0, Enum.EasingStyle.Quint, Enum.EasingDirection.InOut, function(a)
-			cs.yaw = y0 + (S.yaw - y0) * a; cs.pitch = p0 + (S.pitch - p0) * a
-			cs.dist = d0 + (baseDist * S.dist - d0) * a; cs.ty = ty0 + (S.ty - ty0) * a
-		end)
-		task.wait(2.0)
-
-		revealUI()
-		task.wait(1.7)
-		idleT0, idle, ready = t, true, true
-		showToggle()
-		if Notify then
-			pcall(Notify, "NIGHT Z SERIES", nt("Loaded. Press RightShift to hide/show the menu.", "Đã tải xong. Nhấn RightShift để ẩn/hiện menu."), "success", 4)
-		end
-		startShine()
+	local y0, p0, d0, ty0, S = cs.yaw, cs.pitch, cs.dist, cs.ty, SCENES.home
+	numTween(0, 1, 1.8, Enum.EasingStyle.Quint, Enum.EasingDirection.InOut, function(a)
+		cs.yaw = y0 + (S.yaw - y0) * a; cs.pitch = p0 + (S.pitch - p0) * a
+		cs.dist = d0 + (baseDist * S.dist - d0) * a; cs.ty = ty0 + (S.ty - ty0) * a
 	end)
+	task.wait(1.0)
+
+	revealUI()
+	task.wait(1.0)
+	idleT0, idle, ready = t, true, true
+	showToggle()
+	if Notify then
+		pcall(Notify, "NIGHT Z SERIES", nt("Loaded. Press RightShift to hide/show the menu.", "Đã tải xong. Nhấn RightShift để ẩn/hiện menu."), "success", 4)
+	end
+	startShine()
 end)
 
 local winScale = new("UIScale", {Scale = 1, Parent = win})
@@ -1141,7 +1101,7 @@ local function setMenu(show)
 			task.delay(0.15, function() if not menuOpen then pcall(function() v.Visible = false end) end end)
 			tween(win, 0.3, {Position = toggle.Position}, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
 			tween(winScale, 0.3, {Scale = 0.05}, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
-			task.delay(0.32, function() if not menuOpen then pcall(function() win.Visible = false end) end)
+			task.delay(0.32, function() if not menuOpen then pcall(function() win.Visible = false end) end end)
 		end
 	end)
 end
